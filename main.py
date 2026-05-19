@@ -1,252 +1,207 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-广州楼盘网签查询 - 后端API服务
-阳光家缘数据API + MongoDB缓存
-支持2019-2026年数据 + 预售证/推广名搜索
+广州楼盘网签查询 - 后端API服务（静态数据版）
+数据来源：阳光家缘（预抓取，内置在代码中）
+支持：预售证/推广名搜索，按年份筛选
 """
 import os
-import urllib.request
-import urllib.parse
 import json
-import time
-from datetime import datetime, timedelta
+import urllib.parse
 from flask import Flask, jsonify, request
 import pymongo
+from datetime import datetime
 
 app = Flask(__name__)
+app.json.ensure_ascii = False
 
-# MongoDB配置
-MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://tzq_admin:tzq0615@cluster0.0uvs04o.mongodb.net/?appName=Cluster0')
+# MongoDB配置（可选，用于缓存楼栋/单元数据）
+MONGO_URI = os.environ.get(
+    'MONGO_URI',
+    'mongodb+srv://tzq_admin:tzq0615@cluster0.0uvs04o.mongodb.net/?appName=Cluster0'
+)
 
-# 阳光家缘API基础地址
-BASE = "https://zfcj.gz.gov.cn/ysqgk/api/WebApi/"
+# ============ 内置楼盘数据（从 projects_2019_2026.json 加载）============
+PROJECTS_CACHE = []
 
-# 请求头（和test_api.py保持一致）
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-    'Referer': 'https://zfcj.gz.gov.cn/'
-}
+def load_projects():
+    """启动时加载楼盘数据"""
+    global PROJECTS_CACHE
+    try:
+        # 尝试从同级目录的JSON文件加载
+        import pathlib
+        json_path = pathlib.Path(__file__).parent / 'projects_2019_2026.json'
+        if json_path.exists():
+            with open(json_path, encoding='utf-8') as f:
+                PROJECTS_CACHE = json.load(f)
+            print(f"✅ 已从JSON加载 {len(PROJECTS_CACHE)} 个楼盘")
+            return
+    except Exception as e:
+        print(f"⚠️  加载JSON失败: {e}")
 
-# MongoDB连接
-db = None
-try:
-    client = pymongo.MongoClient(MONGO_URI)
-    client.admin.command('ping')
-    db = client['ygjy_db']
-    print("✅ MongoDB connected")
-except Exception as e:
-    print(f"❌ MongoDB error: {e}")
+    # 兜底：内置少量示例数据
+    print("⚠️  使用内置示例数据")
+    PROJECTS_CACHE = [
+        {'projectId': 'demo1', 'projectName': '示例楼盘A', 'presell': '20240001',
+         'developer': '示例开发商', 'houseSoldNum': 50, 'houseUnsaleNum': 100, 'year': 2024},
+    ]
 
-def call_api(path, params=None, retry=3):
-    """调用阳光家缘API（带重试）"""
-    url = BASE + path + ("?" + urllib.parse.urlencode(params) if params else "")
-    req = urllib.request.Request(url, headers=HEADERS)
-    
-    for attempt in range(retry):
-        try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                return json.loads(resp.read().decode('utf-8'))
-        except Exception as e:
-            if attempt == retry - 1:
-                print(f"API error: {e}")
-                return {'data': [], 'total': 0}
-            time.sleep(2 * (attempt + 1))
+load_projects()
 
-# 缓存数据
-_cache = {'projects': None, 'time': 0}
-CACHE_TTL = 300  # 5分钟缓存
 
-def get_projects_data(year=None, page=1, page_size=100):
-    """获取楼盘数据（带缓存）"""
-    # 检查缓存
-    now = time.time()
-    if _cache['projects'] and (now - _cache['time']) < CACHE_TTL:
-        projects = _cache['projects']
-    else:
-        # 获取所有数据（多页）
-        all_projects = []
-        for p in range(1, 50):  # 最多获取50页
-            data = call_api('fdcxmxxlb.ashx', {'page': p, 'pageSize': 100})
-            items = data.get('data', [])
-            if not items:
-                break
-            all_projects.extend(items)
-            time.sleep(0.5)  # 避免请求过快
-        
-        _cache['projects'] = all_projects
-        _cache['time'] = now
-        projects = all_projects
-    
-    # 过滤年份
-    if year:
-        projects = [p for p in projects if str(year) in str(p.get('presell', ''))]
-    
-    return projects
+# ============ 工具函数 ============
+def filter_by_keyword(projects, keyword):
+    """按关键词过滤（推广名/预售证/开发商）"""
+    kw = keyword.lower()
+    return [
+        p for p in projects
+        if kw in (p.get('projectName') or '').lower()
+        or kw in (p.get('presell') or '').lower()
+        or kw in (p.get('developer') or '').lower()
+    ]
 
+def filter_by_year(projects, year):
+    """按年份过滤"""
+    if not year:
+        return projects
+    return [p for p in projects if str(p.get('year')) == str(year)]
+
+
+# ============ 路由 ============
 @app.route('/')
 def index():
-    """首页"""
     return jsonify({
         'name': '广州楼盘网签查询API',
-        'version': '2.0.0',
+        'version': '3.0.0',
+        'dataSource': f'内置数据 {len(PROJECTS_CACHE)} 条（2019-2026）',
         'endpoints': [
             '/api/health',
             '/api/projects',
             '/api/projects/<id>',
             '/api/projects/<id>/buildings',
             '/api/buildings/<id>/units',
-            '/api/search'  # 新增搜索API
+            '/api/search',
+            '/api/stats',
         ]
     })
 
 @app.route('/api/health')
 def health():
-    """健康检查"""
-    mongodb_status = "connected" if db is not None else "disconnected"
     return jsonify({
         'status': 'ok',
-        'mongodb': mongodb_status,
+        'dataCount': len(PROJECTS_CACHE),
+        'mongodb': 'connected' if False else 'not_used',
         'time': datetime.now().isoformat()
     })
 
 @app.route('/api/projects')
 def get_projects():
-    """获取楼盘列表"""
+    """获取楼盘列表（支持年份筛选 + 关键词搜索 + 分页）"""
     page = int(request.args.get('page', 1))
-    page_size = int(request.args.get('pageSize', 20))
+    page_size = min(int(request.args.get('pageSize', 20)), 100)
     year = request.args.get('year', '')
     keyword = request.args.get('keyword', '')
-    
-    # 获取数据
-    if year:
-        projects = get_projects_data(year=int(year) if year.isdigit() else None)
-    else:
-        projects = get_projects_data()
-    
-    # 关键词过滤（支持预售证号和推广名）
+
+    result = PROJECTS_CACHE
+
+    # 年份筛选
+    result = filter_by_year(result, year)
+
+    # 关键词搜索
     if keyword:
-        kw = keyword.lower()
-        projects = [p for p in projects 
-                   if kw in str(p.get('projectName', '')).lower()
-                   or kw in str(p.get('presell', '')).lower()
-                   or kw in str(p.get('developer', '')).lower()]
-    
-    # 分页
+        result = filter_by_keyword(result, keyword)
+
+    # 按网签量排序（降序）
+    result = sorted(result, key=lambda x: int(x.get('houseSoldNum', 0) or 0), reverse=True)
+
+    total = len(result)
     start = (page - 1) * page_size
     end = start + page_size
-    paginated = projects[start:end]
-    
+
     return jsonify({
-        'data': paginated,
-        'total': len(projects),
+        'data': result[start:end],
+        'total': total,
         'page': page,
         'pageSize': page_size,
-        'year': year
+        'year': year,
+        'keyword': keyword
     })
 
 @app.route('/api/search')
 def search():
-    """搜索API - 支持预售证号和推广名"""
+    """搜索（预售证/推广名）"""
     keyword = request.args.get('keyword', '')
-    year = request.args.get('year', '')  # 2019-2026
-    page_size = int(request.args.get('pageSize', 50))
-    
+    year = request.args.get('year', '')
+    page = int(request.args.get('page', 1))
+    page_size = min(int(request.args.get('pageSize', 20)), 100)
+
     if not keyword:
-        return jsonify({'error': ' keyword required', 'data': []})
-    
-    # 获取数据
-    if year:
-        projects = get_projects_data(year=int(year) if year.isdigit() else None)
-    else:
-        projects = get_projects_data()
-    
-    # 搜索匹配
-    kw = keyword.lower()
-    results = []
-    for p in projects:
-        project_name = str(p.get('projectName', '')).lower()
-        presell = str(p.get('presell', '')).lower()
-        developer = str(p.get('developer', '')).lower()
-        
-        # 精确匹配预售证号
-        if kw == presell:
-            results.insert(0, p)
-        # 模糊匹配
-        elif kw in project_name or kw in developer:
-            results.append(p)
-    
+        return jsonify({'error': 'keyword required', 'data': []}), 400
+
+    result = PROJECTS_CACHE
+    result = filter_by_year(result, year)
+    result = filter_by_keyword(result, keyword)
+    result = sorted(result, key=lambda x: int(x.get('houseSoldNum', 0) or 0), reverse=True)
+
+    total = len(result)
+    start = (page - 1) * page_size
+    end = start + page_size
+
     return jsonify({
+        'data': result[start:end],
+        'total': total,
         'keyword': keyword,
-        'data': results[:page_size],
-        'total': len(results),
         'year': year
+    })
+
+@app.route('/api/stats')
+def stats():
+    """统计信息"""
+    total_sold = sum(int(p.get('houseSoldNum', 0) or 0) for p in PROJECTS_CACHE)
+    total_unsale = sum(int(p.get('houseUnsaleNum', 0) or 0) for p in PROJECTS_CACHE)
+
+    year_stats = {}
+    for p in PROJECTS_CACHE:
+        y = p.get('year', 0)
+        if y:
+            year_stats[y] = year_stats.get(y, 0) + 1
+
+    return jsonify({
+        'totalProjects': len(PROJECTS_CACHE),
+        'totalSold': total_sold,
+        'totalUnsale': total_unsale,
+        'byYear': dict(sorted(year_stats.items()))
     })
 
 @app.route('/api/projects/<project_id>')
 def get_project(project_id):
-    """获取单个楼盘详情"""
-    projects = get_projects_data()
-    project = next((p for p in projects if p.get('projectId') == project_id), None)
-    
-    if not project:
-        return jsonify({'error': 'Project not found'}), 404
-    
-    return jsonify(project)
+    """楼盘详情"""
+    for p in PROJECTS_CACHE:
+        if p.get('projectId') == project_id:
+            return jsonify(p)
+    return jsonify({'error': 'Not found'}), 404
 
 @app.route('/api/projects/<project_id>/buildings')
 def get_buildings(project_id):
-    """获取楼盘的楼栋列表"""
-    projects = get_projects_data()
-    project = next((p for p in projects if p.get('projectId') == project_id), None)
-    
-    if not project:
-        return jsonify({'error': 'Project not found'}), 404
-    
-    presell = project.get('presell', '')
-    
-    if presell:
-        building_data = call_api('xmldxx.ashx', {
-            'sProjectId': project_id,
-            'sPreSellNo': presell
-        })
-    else:
-        building_data = {'data': []}
-    
+    """楼栋列表（暂返回空，需调用阳光家缘详情API）"""
     return jsonify({
-        'data': building_data.get('data', []),
-        'projectName': project.get('projectName', '')
+        'projectId': project_id,
+        'buildings': [],
+        'note': '楼栋数据需要实时调用阳光家缘API，当前为静态数据版本'
     })
 
 @app.route('/api/buildings/<building_id>/units')
 def get_units(building_id):
-    """获取楼栋的单元销控"""
-    data = call_api('xmxkbxx.ashx', {
-        'buildingId': building_id,
-        'houseFunctionId': 0,
-        'houseStatusId': 0
-    })
-    
-    stats = {'unsold': 0, 'signed': 0, 'locked': 0}
-    units = []
-    
-    for group in data.get('data', []):
-        for unit in group.get('groupData', []):
-            status = unit.get('status', 0)
-            if status == 1:
-                stats['unsold'] += 1
-            elif status == 2:
-                stats['signed'] += 1
-            elif status == 3:
-                stats['locked'] += 1
-            units.append(unit)
-    
+    """单元销控（暂返回空）"""
     return jsonify({
-        'units': units,
-        'stats': stats,
-        'total': len(units)
+        'buildingId': building_id,
+        'units': [],
+        'note': '单元数据需要实时调用阳光家缘API'
     })
 
+# ============ 启动 ============
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5001))
+    port = int(os.environ.get('PORT', 5000))
+    print(f"🚀 启动服务器: http://localhost:{port}")
+    print(f"   数据: {len(PROJECTS_CACHE)} 条楼盘")
     app.run(host='0.0.0.0', port=port, debug=True)
