@@ -3,6 +3,7 @@
 """
 广州楼盘网签查询 - 后端API服务
 阳光家缘数据API + MongoDB缓存
+支持2019-2026年数据 + 预售证/推广名搜索
 """
 import os
 import urllib.request
@@ -15,32 +16,29 @@ import pymongo
 
 app = Flask(__name__)
 
-# MongoDB配置 - 从环境变量读取
-MONGO_URI = os.environ.get("MONGO_URI", "")
+# MongoDB配置
+MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://tzq_admin:tzq0615@cluster0.0uvs04o.mongodb.net/?appName=Cluster0')
 
 # 阳光家缘API基础地址
 BASE = "https://zfcj.gz.gov.cn/ysqgk/Api/WebApi/"
 
 # 请求头
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/javascript, */*",
-    "X-Requested-With": "XMLHttpRequest",
-    "Referer": "https://zfcj.gz.gov.cn/zfcj/fyxx/projectdetail/index.html",
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/javascript, */*',
+    'X-Requested-With': 'XMLHttpRequest',
+    'Referer': 'https://zfcj.gz.gov.cn/zfcj/fyxx/projectdetail/index.html',
 }
 
 # MongoDB连接
 db = None
-if MONGO_URI:
-    try:
-        client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        client.admin.command("ping")
-        db = client["ygjy_db"]
-        print("MongoDB connected")
-    except Exception as e:
-        print(f"MongoDB error: {e}")
-else:
-    print("No MONGO_URI set, running without database")
+try:
+    client = pymongo.MongoClient(MONGO_URI)
+    client.admin.command('ping')
+    db = client['ygjy_db']
+    print("✅ MongoDB connected")
+except Exception as e:
+    print(f"❌ MongoDB error: {e}")
 
 def call_api(path, params=None, retry=3):
     """调用阳光家缘API（带重试）"""
@@ -50,132 +48,207 @@ def call_api(path, params=None, retry=3):
     for attempt in range(retry):
         try:
             with urllib.request.urlopen(req, timeout=20) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                return json.loads(resp.read().decode('utf-8'))
         except Exception as e:
             if attempt == retry - 1:
                 print(f"API error: {e}")
-                return {"data": [], "total": 0}
+                return {'data': [], 'total': 0}
             time.sleep(2 * (attempt + 1))
 
-@app.route("/")
+# 缓存数据
+_cache = {'projects': None, 'time': 0}
+CACHE_TTL = 300  # 5分钟缓存
+
+def get_projects_data(year=None, page=1, page_size=100):
+    """获取楼盘数据（带缓存）"""
+    # 检查缓存
+    now = time.time()
+    if _cache['projects'] and (now - _cache['time']) < CACHE_TTL:
+        projects = _cache['projects']
+    else:
+        # 获取所有数据（多页）
+        all_projects = []
+        for p in range(1, 50):  # 最多获取50页
+            data = call_api('fdcxmxxlb.ashx', {'page': p, 'pageSize': 100})
+            items = data.get('data', [])
+            if not items:
+                break
+            all_projects.extend(items)
+            time.sleep(0.5)  # 避免请求过快
+        
+        _cache['projects'] = all_projects
+        _cache['time'] = now
+        projects = all_projects
+    
+    # 过滤年份
+    if year:
+        projects = [p for p in projects if str(year) in str(p.get('presell', ''))]
+    
+    return projects
+
+@app.route('/')
 def index():
     """首页"""
     return jsonify({
-        "name": "广州楼盘网签查询API",
-        "version": "1.0.0",
-        "endpoints": [
-            "/api/health",
-            "/api/projects",
-            "/api/projects/<id>",
-            "/api/projects/<id>/buildings",
-            "/api/buildings/<id>/units"
+        'name': '广州楼盘网签查询API',
+        'version': '2.0.0',
+        'endpoints': [
+            '/api/health',
+            '/api/projects',
+            '/api/projects/<id>',
+            '/api/projects/<id>/buildings',
+            '/api/buildings/<id>/units',
+            '/api/search'  # 新增搜索API
         ]
     })
 
-@app.route("/api/health")
+@app.route('/api/health')
 def health():
     """健康检查"""
     mongodb_status = "connected" if db is not None else "disconnected"
     return jsonify({
-        "status": "ok",
-        "mongodb": mongodb_status,
-        "time": datetime.now().isoformat()
+        'status': 'ok',
+        'mongodb': mongodb_status,
+        'time': datetime.now().isoformat()
     })
 
-@app.route("/api/projects")
+@app.route('/api/projects')
 def get_projects():
     """获取楼盘列表"""
-    page = int(request.args.get("page", 1))
-    page_size = int(request.args.get("pageSize", 10))
-    keyword = request.args.get("keyword", "")
+    page = int(request.args.get('page', 1))
+    page_size = int(request.args.get('pageSize', 20))
+    year = request.args.get('year', '')
+    keyword = request.args.get('keyword', '')
     
-    data = call_api("fdcxmxxlb.ashx", {
-        "page": page,
-        "pageSize": page_size
-    })
+    # 获取数据
+    if year:
+        projects = get_projects_data(year=int(year) if year.isdigit() else None)
+    else:
+        projects = get_projects_data()
     
-    projects = data.get("data", [])
-    
-    # 关键词过滤
+    # 关键词过滤（支持预售证号和推广名）
     if keyword:
+        kw = keyword.lower()
         projects = [p for p in projects 
-                   if keyword in p.get("projectName", "") 
-                   or keyword in p.get("presell", "")]
+                   if kw in str(p.get('projectName', '')).lower()
+                   or kw in str(p.get('presell', '')).lower()
+                   or kw in str(p.get('developer', '')).lower()]
+    
+    # 分页
+    start = (page - 1) * page_size
+    end = start + page_size
+    paginated = projects[start:end]
     
     return jsonify({
-        "data": projects,
-        "total": len(projects),
-        "page": page,
-        "pageSize": page_size
+        'data': paginated,
+        'total': len(projects),
+        'page': page,
+        'pageSize': page_size,
+        'year': year
     })
 
-@app.route("/api/projects/<project_id>")
+@app.route('/api/search')
+def search():
+    """搜索API - 支持预售证号和推广名"""
+    keyword = request.args.get('keyword', '')
+    year = request.args.get('year', '')  # 2019-2026
+    page_size = int(request.args.get('pageSize', 50))
+    
+    if not keyword:
+        return jsonify({'error': ' keyword required', 'data': []})
+    
+    # 获取数据
+    if year:
+        projects = get_projects_data(year=int(year) if year.isdigit() else None)
+    else:
+        projects = get_projects_data()
+    
+    # 搜索匹配
+    kw = keyword.lower()
+    results = []
+    for p in projects:
+        project_name = str(p.get('projectName', '')).lower()
+        presell = str(p.get('presell', '')).lower()
+        developer = str(p.get('developer', '')).lower()
+        
+        # 精确匹配预售证号
+        if kw == presell:
+            results.insert(0, p)
+        # 模糊匹配
+        elif kw in project_name or kw in developer:
+            results.append(p)
+    
+    return jsonify({
+        'keyword': keyword,
+        'data': results[:page_size],
+        'total': len(results),
+        'year': year
+    })
+
+@app.route('/api/projects/<project_id>')
 def get_project(project_id):
     """获取单个楼盘详情"""
-    data = call_api("fdcxmxxlb.ashx", {"page": 1, "pageSize": 50})
-    
-    projects = data.get("data", [])
-    project = next((p for p in projects if p.get("projectId") == project_id), None)
+    projects = get_projects_data()
+    project = next((p for p in projects if p.get('projectId') == project_id), None)
     
     if not project:
-        return jsonify({"error": "Project not found"}), 404
+        return jsonify({'error': 'Project not found'}), 404
     
     return jsonify(project)
 
-@app.route("/api/projects/<project_id>/buildings")
+@app.route('/api/projects/<project_id>/buildings')
 def get_buildings(project_id):
     """获取楼盘的楼栋列表"""
-    data = call_api("fdcxmxxlb.ashx", {"page": 1, "pageSize": 50})
-    projects = data.get("data", [])
-    project = next((p for p in projects if p.get("projectId") == project_id), None)
+    projects = get_projects_data()
+    project = next((p for p in projects if p.get('projectId') == project_id), None)
     
     if not project:
-        return jsonify({"error": "Project not found"}), 404
+        return jsonify({'error': 'Project not found'}), 404
     
-    presell = project.get("presell", "")
+    presell = project.get('presell', '')
     
     if presell:
-        building_data = call_api("xmldxx.ashx", {
-            "sProjectId": project_id,
-            "sPreSellNo": presell
+        building_data = call_api('xmldxx.ashx', {
+            'sProjectId': project_id,
+            'sPreSellNo': presell
         })
     else:
-        building_data = {"data": []}
+        building_data = {'data': []}
     
     return jsonify({
-        "data": building_data.get("data", []),
-        "projectName": project.get("projectName", "")
+        'data': building_data.get('data', []),
+        'projectName': project.get('projectName', '')
     })
 
-@app.route("/api/buildings/<building_id>/units")
+@app.route('/api/buildings/<building_id>/units')
 def get_units(building_id):
     """获取楼栋的单元销控"""
-    data = call_api("xmxkbxx.ashx", {
-        "buildingId": building_id,
-        "houseFunctionId": 0,
-        "houseStatusId": 0
+    data = call_api('xmxkbxx.ashx', {
+        'buildingId': building_id,
+        'houseFunctionId': 0,
+        'houseStatusId': 0
     })
     
-    stats = {"unsold": 0, "signed": 0, "locked": 0}
+    stats = {'unsold': 0, 'signed': 0, 'locked': 0}
     units = []
     
-    for group in data.get("data", []):
-        for unit in group.get("groupData", []):
-            status = unit.get("status", 0)
+    for group in data.get('data', []):
+        for unit in group.get('groupData', []):
+            status = unit.get('status', 0)
             if status == 1:
-                stats["unsold"] += 1
+                stats['unsold'] += 1
             elif status == 2:
-                stats["signed"] += 1
+                stats['signed'] += 1
             elif status == 3:
-                stats["locked"] += 1
+                stats['locked'] += 1
             units.append(unit)
     
     return jsonify({
-        "units": units,
-        "stats": stats,
-        "total": len(units)
+        'units': units,
+        'stats': stats,
+        'total': len(units)
     })
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
