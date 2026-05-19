@@ -20,14 +20,12 @@ app = Flask(__name__)
 MONGO_URI = os.environ.get('MONGO_URI', 'mongodb+srv://tzq_admin:tzq0615@cluster0.0uvs04o.mongodb.net/?appName=Cluster0')
 
 # 阳光家缘API基础地址
-BASE = "https://zfcj.gz.gov.cn/ysqgk/Api/WebApi/"
+BASE = "https://zfcj.gz.gov.cn/ysqgk/api/WebApi/"
 
-# 请求头
+# 请求头（和test_api.py保持一致）
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/javascript, */*',
-    'X-Requested-With': 'XMLHttpRequest',
-    'Referer': 'https://zfcj.gz.gov.cn/zfcj/fyxx/projectdetail/index.html',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+    'Referer': 'https://zfcj.gz.gov.cn/'
 }
 
 # MongoDB连接
@@ -250,5 +248,5 @@ def get_units(building_id):
     })
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 5001))
     app.run(host='0.0.0.0', port=port, debug=True)
