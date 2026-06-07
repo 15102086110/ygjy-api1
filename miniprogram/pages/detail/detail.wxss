@@ -1,0 +1,147 @@
+/* pages/detail/detail.wxss */
+page {
+  background-color: #f8f9fa;
+}
+
+.container {
+  padding: 0;
+}
+
+/* 楼盘信息卡片 */
+.info-card {
+  background: linear-gradient(135deg, #1890ff 0%, #36a3ff 100%);
+  padding: 40rpx 32rpx;
+  color: #fff;
+}
+
+.project-name {
+  font-size: 40rpx;
+  font-weight: 600;
+  margin-bottom: 24rpx;
+}
+
+.info-row {
+  display: flex;
+  margin-bottom: 16rpx;
+  font-size: 28rpx;
+}
+
+.label {
+  opacity: 0.8;
+  width: 120rpx;
+}
+
+.value {
+  flex: 1;
+}
+
+/* 统计卡片 */
+.stats-card, .buildings-card {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 32rpx;
+  margin: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0,0,0,0.06);
+}
+
+.stats-title, .card-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 24rpx;
+  padding-bottom: 16rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 24rpx;
+}
+
+.stat-item {
+  text-align: center;
+  flex: 1;
+}
+
+.stat-num {
+  display: block;
+  font-size: 48rpx;
+  font-weight: 600;
+}
+
+.stat-item.sold .stat-num {
+  color: #1890ff;
+}
+
+.stat-item.unsale .stat-num {
+  color: #ff6b6b;
+}
+
+.stat-item.total .stat-num {
+  color: #333;
+}
+
+.stat-label {
+  font-size: 24rpx;
+  color: #999;
+  margin-top: 8rpx;
+}
+
+/* 进度条 */
+.progress-bar {
+  background: #f0f0f0;
+  border-radius: 8rpx;
+  height: 16rpx;
+  overflow: hidden;
+  margin-bottom: 12rpx;
+}
+
+.progress-fill {
+  background: linear-gradient(90deg, #1890ff, #36a3ff);
+  height: 100%;
+  border-radius: 8rpx;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  text-align: center;
+  font-size: 26rpx;
+  color: #666;
+}
+
+/* 楼栋列表 */
+.building-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.building-item:last-child {
+  border-bottom: none;
+}
+
+.building-name {
+  font-size: 30rpx;
+  color: #333;
+}
+
+.building-arrow {
+  font-size: 28rpx;
+  color: #ccc;
+}
+
+.empty {
+  text-align: center;
+  padding: 60rpx;
+  color: #999;
+}
+
+/* 加载中 */
+.loading {
+  text-align: center;
+  padding: 60rpx;
+  color: #999;
+}

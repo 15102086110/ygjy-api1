@@ -1,0 +1,73 @@
+<!--pages/detail/detail.wxml-->
+<view class="container" wx:if="{{project}}">
+  <!-- 楼盘信息卡片 -->
+  <view class="info-card">
+    <view class="project-name">{{project.projectName}}</view>
+    <view class="info-row">
+      <text class="label">开发商</text>
+      <text class="value">{{project.developer || '暂无'}}</text>
+    </view>
+    <view class="info-row" wx:if="{{project.presell}}">
+      <text class="label">预售证</text>
+      <text class="value">{{project.presell}}</text>
+    </view>
+    <view class="info-row" wx:if="{{project.area}}">
+      <text class="label">区域</text>
+      <text class="value">{{project.area}}</text>
+    </view>
+    <view class="info-row" wx:if="{{project.address}}">
+      <text class="label">地址</text>
+      <text class="value">{{project.address}}</text>
+    </view>
+  </view>
+
+  <!-- 销售统计 -->
+  <view class="stats-card">
+    <view class="stats-title">销售统计</view>
+    <view class="stats-row">
+      <view class="stat-item sold">
+        <text class="stat-num">{{project.houseSoldNum || 0}}</text>
+        <text class="stat-label">已售</text>
+      </view>
+      <view class="stat-item unsale">
+        <text class="stat-num">{{project.houseUnsaleNum || 0}}</text>
+        <text class="stat-label">未售</text>
+      </view>
+      <view class="stat-item total">
+        <text class="stat-num">{{sellRate.total}}</text>
+        <text class="stat-label">总套数</text>
+      </view>
+    </view>
+    <!-- 进度条 -->
+    <view class="progress-bar">
+      <view class="progress-fill" style="width: {{sellRate.percent}}%"></view>
+    </view>
+    <view class="progress-text">
+      去化率 {{sellRate.percent}}%
+    </view>
+  </view>
+
+  <!-- 楼栋列表 -->
+  <view class="buildings-card">
+    <view class="card-title">楼栋列表</view>
+    <view class="building-list" wx:if="{{buildings.length > 0}}">
+      <view 
+        class="building-item" 
+        wx:for="{{buildings}}" 
+        wx:key="buildingId"
+        bindtap="onBuildingTap"
+        data-id="{{item.buildingId}}"
+      >
+        <text class="building-name">{{item.buildingName || '楼栋'}}</text>
+        <text class="building-arrow">›</text>
+      </view>
+    </view>
+    <view class="empty" wx:if="{{!loading && buildings.length === 0}}">
+      <text>暂无楼栋数据</text>
+    </view>
+  </view>
+</view>
+
+<view class="loading" wx:if="{{loading}}">
+  <text>加载中...</text>
+</view>

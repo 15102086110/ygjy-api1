@@ -1,0 +1,94 @@
+<!--pages/index/index.wxml-->
+<view class="container">
+  <!-- 顶部Tab -->
+  <view class="tab-bar">
+    <view class="tab-item {{activeTab === 'today' ? 'active' : ''}}" bindtap="onTabTap" data-tab="today">今日</view>
+    <view class="tab-item {{activeTab === 'week' ? 'active' : ''}}" bindtap="onTabTap" data-tab="week">本周</view>
+    <view class="tab-item {{activeTab === 'month' ? 'active' : ''}}" bindtap="onTabTap" data-tab="month">本月</view>
+    <view class="tab-item {{activeTab === 'year' ? 'active' : ''}}" bindtap="onTabTap" data-tab="year">本年</view>
+  </view>
+
+  <!-- 搜索框 -->
+  <view class="search-box">
+    <input 
+      class="search-input" 
+      placeholder="搜索楼盘名称/预售证号..." 
+      value="{{keyword}}"
+      bindinput="onInput"
+      bindconfirm="onSearch"
+    />
+    <view class="search-btn" bindtap="onSearch">搜索</view>
+  </view>
+
+  <!-- 年份筛选 -->
+  <scroll-view class="year-scroll" scroll-x>
+    <view class="year-bar">
+      <view class="year-item {{yearFilter === 'all' ? 'active' : ''}}" bindtap="onYearTap" data-year="all">全部</view>
+      <view class="year-item {{yearFilter === '2026' ? 'active' : ''}}" bindtap="onYearTap" data-year="2026">2026</view>
+      <view class="year-item {{yearFilter === '2025' ? 'active' : ''}}" bindtap="onYearTap" data-year="2025">2025</view>
+      <view class="year-item {{yearFilter === '2024' ? 'active' : ''}}" bindtap="onYearTap" data-year="2024">2024</view>
+      <view class="year-item {{yearFilter === '2023' ? 'active' : ''}}" bindtap="onYearTap" data-year="2023">2023</view>
+      <view class="year-item {{yearFilter === '2022' ? 'active' : ''}}" bindtap="onYearTap" data-year="2022">2022</view>
+      <view class="year-item {{yearFilter === '2021' ? 'active' : ''}}" bindtap="onYearTap" data-year="2021">2021</view>
+      <view class="year-item {{yearFilter === '2020' ? 'active' : ''}}" bindtap="onYearTap" data-year="2020">2020</view>
+      <view class="year-item {{yearFilter === '2019' ? 'active' : ''}}" bindtap="onYearTap" data-year="2019">2019</view>
+    </view>
+  </scroll-view>
+
+  <!-- 统计卡片 -->
+  <view class="stats-card">
+    <view class="stat-item">
+      <text class="stat-num">{{stats.today}}</text>
+      <text class="stat-label">今日网签</text>
+    </view>
+    <view class="stat-divider"></view>
+    <view class="stat-item">
+      <text class="stat-num {{stats.week < 0 ? 'pending' : ''}}">{{stats.week < 0 ? '待上线' : stats.week}}</text>
+      <text class="stat-label">本周网签</text>
+    </view>
+    <view class="stat-divider"></view>
+    <view class="stat-item">
+      <text class="stat-num {{stats.month < 0 ? 'pending' : ''}}">{{stats.month < 0 ? '待上线' : stats.month}}</text>
+      <text class="stat-label">本月网签</text>
+    </view>
+    <view class="stat-divider"></view>
+    <view class="stat-item">
+      <text class="stat-num {{stats.year < 0 ? 'pending' : ''}}">{{stats.year < 0 ? '待上线' : stats.year}}</text>
+      <text class="stat-label">本年网签</text>
+    </view>
+  </view>
+
+  <!-- 排行榜 -->
+  <view class="list-header">
+    <text class="rank-icon">🏆</text>
+    <text class="rank-title">网签排行榜</text>
+  </view>
+
+  <view class="rank-list">
+    <view 
+      class="rank-item" 
+      wx:for="{{projects}}" 
+      wx:key="id"
+      bindtap="onTap"
+      data-id="{{item.id}}"
+    >
+      <view class="rank-num {{index < 3 ? 'top' : ''}}">{{index + 1}}</view>
+      <view class="rank-info">
+        <view class="rank-name">{{item.projectName}}</view>
+        <view class="rank-detail">{{item.developer}}</view>
+        <view class="rank-presell" wx:if="{{item.presell}}">预售证: {{item.presell}}</view>
+      </view>
+      <view class="rank-sold">
+        <text class="sold-num">{{item.houseSoldNum}}</text>
+        <text class="sold-label">套</text>
+      </view>
+    </view>
+    
+    <view class="loading" wx:if="{{loading}}">
+      <text>加载中...</text>
+    </view>
+    <view class="empty" wx:if="{{!loading && projects.length === 0}}">
+      <text>暂无数据</text>
+    </view>
+  </view>
+</view>

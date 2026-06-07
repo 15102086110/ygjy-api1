@@ -1,0 +1,43 @@
+<!--pages/building/building.wxml-->
+<view class="container">
+  <!-- 统计 -->
+  <view class="stats-bar">
+    <view class="stat-item sold">
+      <text class="stat-num">{{stats.signed}}</text>
+      <text class="stat-label">已签约</text>
+    </view>
+    <view class="stat-item">
+      <text class="stat-num">{{stats.locked}}</text>
+      <text class="stat-label">锁定</text>
+    </view>
+    <view class="stat-item unsale">
+      <text class="stat-num">{{stats.unsold}}</text>
+      <text class="stat-label">可售</text>
+    </view>
+  </view>
+
+  <!-- 房间列表 -->
+  <view class="room-card">
+    <view class="card-title">销控表</view>
+    <view class="floor-section" wx:for="{{floors}}" wx:key="group">
+      <view class="floor-title">{{item.group}}层</view>
+      <view class="room-grid">
+        <view 
+          class="room-item {{room.statusStr}}"
+          wx:for="{{item.groupData}}" 
+          wx:for-item="room"
+          wx:key="unitId"
+        >
+          {{room.unitNum}}
+        </view>
+      </view>
+    </view>
+    <view class="empty" wx:if="{{!loading && floors.length === 0}}">
+      <text>暂无房间数据</text>
+    </view>
+  </view>
+</view>
+
+<view class="loading" wx:if="{{loading}}">
+  <text>加载中...</text>
+</view>
