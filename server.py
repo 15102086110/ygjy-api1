@@ -508,16 +508,32 @@ def signing_daily():
         signing_data = data.get('data', [])
         total = data.get('total', 0)
 
-        # 汇总今日签约数
+        # 汇总今日签约数（住宅+商业+办公+车位）
+        today_residential = 0
+        today_commercial = 0
+        today_office = 0
+        today_parking = 0
         today_total = 0
         for item in signing_data:
-            today_total += int(item.get('signNum', 0) or 0)
+            r = int(item.get('zhuZaiTaoShu', 0) or 0)
+            c = int(item.get('shangYeTaoShu', 0) or 0)
+            o = int(item.get('banGongTaoShu', 0) or 0)
+            p = int(item.get('cheWeiTaoShu', 0) or 0)
+            today_residential += r
+            today_commercial += c
+            today_office += o
+            today_parking += p
+            today_total += r + c + o + p
 
         result = {
             'code': 1,
             'data': signing_data,
             'total': total,
             'todaySignedCount': today_total,
+            'todayResidential': today_residential,
+            'todayCommercial': today_commercial,
+            'todayOffice': today_office,
+            'todayParking': today_parking,
             'page': page,
             'pageSize': page_size,
             'date': datetime.now().strftime('%Y-%m-%d'),
