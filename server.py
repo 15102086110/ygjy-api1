@@ -59,25 +59,37 @@ def get_db():
 
 PROJECTS_CACHE = []
 
+SAMPLE_PROJECTS = []
+
 def load_static_projects():
     """启动时从JSON加载楼盘数据作为兜底"""
-    global PROJECTS_CACHE
+    global PROJECTS_CACHE, SAMPLE_PROJECTS
     json_path = pathlib.Path(__file__).parent / 'projects_2019_2026.json'
     if json_path.exists():
         try:
             with open(json_path, encoding='utf-8') as f:
                 PROJECTS_CACHE = json.load(f)
             print(f"✅ 已从JSON加载 {len(PROJECTS_CACHE)} 个楼盘")
-            return
         except Exception as e:
             print(f"⚠️  加载JSON失败: {e}")
-    print("⚠️  无静态楼盘数据，将完全依赖API")
+    else:
+        print("⚠️  无静态楼盘数据（projects_2019_2026.json未找到）")
+
+    # 加载示例数据（备用）
+    sample_path = pathlib.Path(__file__).parent / 'projects_sample.json'
+    if sample_path.exists():
+        try:
+            with open(sample_path, encoding='utf-8') as f:
+                SAMPLE_PROJECTS = json.load(f)
+            print(f"✅ 已加载 {len(SAMPLE_PROJECTS)} 条示例楼盘")
+        except Exception:
+            pass
 
 load_static_projects()
 
 # ============== API调用 ==============
 
-def call_api(path, params=None, max_retry=3):
+def call_api(path, params=None, max_retry=2):
     """调用阳光家缘API（带指数退避重试）"""
     url = BASE + path
     if params:
@@ -87,15 +99,10 @@ def call_api(path, params=None, max_retry=3):
 
     for attempt in range(max_retry):
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 data = json.loads(resp.read().decode('utf-8'))
-                # 如果返回空数据，可能被反爬，也重试
-                if isinstance(data, dict) and data.get('total', -1) == 0 and attempt < max_retry - 1:
-                    time.sleep(2 ** (attempt + 1))
-                    continue
                 return data
         except urllib.error.HTTPError as e:
-            # HTTP 553 = 反爬限制，指数退避
             if e.code == 553 and attempt < max_retry - 1:
                 wait = 2 ** (attempt + 1)
                 print(f"  ⚠️ HTTP 553, 等待{wait}s后重试...")
@@ -106,6 +113,7 @@ def call_api(path, params=None, max_retry=3):
             if attempt < max_retry - 1:
                 time.sleep(2 ** (attempt + 1))
             else:
+                # 超时或网络错误时直接抛出，不再等待
                 raise
 
 # ============== 缓存辅助 ==============
@@ -239,8 +247,10 @@ def get_projects():
     except Exception as e:
         print(f"⚠️  API失败，使用静态数据: {e}")
 
-    # 3. 兜底：静态数据
-    result = PROJECTS_CACHE
+    # 3. 兜底：静态数据（优先用完整数据，其次用示例）
+    result = PROJECTS_CACHE if PROJECTS_CACHE else SAMPLE_PROJECTS
+    if not result:
+        result = SAMPLE_PROJECTS  # 双重保底
     if year:
         result = [p for p in result if str(p.get('year')) == str(year)]
     if keyword:
